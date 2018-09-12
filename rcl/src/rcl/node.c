@@ -99,7 +99,10 @@ const char * rcl_create_node_logger_name(
   return node_logger_name;
 }
 
-const char * rcl_get_secure_root(const char * node_name, const rcl_allocator_t * allocator)
+const char * rcl_get_secure_root(
+  const char * node_name,
+  const char * node_namespace,
+  const rcl_allocator_t * allocator)
 {
   const char * ros_secure_root_env = NULL;
   if (NULL == node_name) {
@@ -115,7 +118,21 @@ const char * rcl_get_secure_root(const char * node_name, const rcl_allocator_t *
   if (!ros_secure_root_size) {
     return NULL;  // environment variable was empty
   }
-  char * node_secure_root = rcutils_join_path(ros_secure_root_env, node_name, *allocator);
+  char * node_secure_root = NULL;
+  // If the namespace is the root namespace ("/"), the secure root is just the node name.
+  if (strlen(node_namespace) == 1) {
+    node_secure_root = rcutils_join_path(ros_secure_root_env, node_name, *allocator);
+  } else {
+    char * node_fqn = NULL;
+    char * node_root_norm = NULL;
+    // Combine node namespace with node name
+    node_fqn = rcutils_format_string(*allocator, "%s%s%s", node_namespace, "/", node_name);
+    // Get normalized path, ignore the leading forward slash.
+    node_root_norm = rcutils_norm_path(node_fqn + 1, *allocator);
+    node_secure_root = rcutils_join_path(ros_secure_root_env, node_root_norm, *allocator);
+    allocator->deallocate(node_fqn, allocator->state);
+    allocator->deallocate(node_root_norm, allocator->state);
+  }
   if (!rcutils_is_directory(node_secure_root)) {
     allocator->deallocate(node_secure_root, allocator->state);
     return NULL;
@@ -315,7 +332,7 @@ rcl_node_init(
     node_security_options.enforce_security = RMW_SECURITY_ENFORCEMENT_PERMISSIVE;
   } else {  // if use_security
     // File discovery magic here
-    const char * node_secure_root = rcl_get_secure_root(name, allocator);
+    const char * node_secure_root = rcl_get_secure_root(name, local_namespace_, allocator);
     if (node_secure_root) {
       node_security_options.security_root_path = node_secure_root;
     } else {
