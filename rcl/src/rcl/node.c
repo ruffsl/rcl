@@ -46,6 +46,7 @@ extern "C"
 #include "./common.h"
 
 
+#define ROS_SECURITY_NODE_DIRECTORY_VAR_NAME "ROS_SECURITY_NODE_DIRECTORY"
 #define ROS_SECURITY_ROOT_DIRECTORY_VAR_NAME "ROS_SECURITY_ROOT_DIRECTORY"
 #define ROS_SECURITY_STRATEGY_VAR_NAME "ROS_SECURITY_STRATEGY"
 #define ROS_SECURITY_ENABLE_VAR_NAME "ROS_SECURITY_ENABLE"
@@ -114,25 +115,35 @@ const char * rcl_get_secure_root(
   const char * node_namespace,
   const rcl_allocator_t * allocator)
 {
+  const char * ros_secure_node_env = NULL;
   const char * ros_secure_root_env = NULL;
   if (NULL == node_name) {
     return NULL;
   }
-  if (rcutils_get_env(ROS_SECURITY_ROOT_DIRECTORY_VAR_NAME, &ros_secure_root_env)) {
-    return NULL;
+  if (rcutils_get_env(ROS_SECURITY_NODE_DIRECTORY_VAR_NAME, &ros_secure_node_env)) {
+    if (rcutils_get_env(ROS_SECURITY_ROOT_DIRECTORY_VAR_NAME, &ros_secure_root_env)) {
+      return NULL;
+    }
   }
-  if (!ros_secure_root_env) {
-    return NULL;  // environment variable not defined
+  if (!ros_secure_node_env) {
+    if (!ros_secure_root_env) {
+      return NULL;  // environment variable not defined
+    }
   }
-  size_t ros_secure_root_size = strlen(ros_secure_root_env);
-  if (!ros_secure_root_size) {
-    return NULL;  // environment variable was empty
+  size_t ros_secure_node_size = strlen(ros_secure_node_env);
+  if (!ros_secure_node_size) {
+    size_t ros_secure_root_size = strlen(ros_secure_root_env);
+    if (!ros_secure_root_size) {
+      return NULL;  // environment variable was empty
+    }
   }
   char * node_secure_root = NULL;
-  // TODO(ros2team): This make assumption on the value and length of the root namespace.
-  // This should likely come from another (rcl/rmw?) function for reuse.
-  // If the namespace is the root namespace ("/"), the secure root is just the node name.
-  if (strlen(node_namespace) == 1) {
+  if (ros_secure_node_size) {
+    node_secure_root = rcutils_join_path(ros_secure_node_env, "", *allocator);
+    // TODO(ros2team): This make assumption on the value and length of the root namespace.
+    // This should likely come from another (rcl/rmw?) function for reuse.
+    // If the namespace is the root namespace ("/"), the secure root is just the node name.
+  } else if (strlen(node_namespace) == 1) {
     node_secure_root = rcutils_join_path(ros_secure_root_env, node_name, *allocator);
   } else {
     char * node_fqn = NULL;
